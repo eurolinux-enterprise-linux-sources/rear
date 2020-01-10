@@ -1,16 +1,18 @@
 Summary:     Relax-and-Recover is a Linux disaster recovery and system migration tool
 Name:        rear
 Version:     1.17.2
-Release:     4%{?dist}
+Release:     7%{?dist}
 License:     GPLv2+
 Group:       Applications/File
 URL:         http://relax-and-recover.org/
 
 # as GitHub stopped with download section we need to go back to Sourceforge for downloads
 Source0:     https://sourceforge.net/projects/rear/files/rear/1.17/%{version}/rear-%{version}.tar.gz
+Patch0:      pr-1383.diff
 
 BuildRoot:   %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
+BuildRequires:        git
 Requires:    binutils
 Requires:    ethtool
 Requires:    gzip
@@ -65,6 +67,14 @@ fi
 
 %prep
 %setup -q 
+git init
+git config user.email "rpm-build"
+git config user.name "rpm-build"
+git add .
+git commit -a -q -m "%{version} baseline."
+# Apply all the patches on top.
+git apply %{patches}
+rm -rf .git
 
 echo "30 1 * * * root /usr/sbin/rear checklayout || /usr/sbin/rear mkrescue" >rear.cron
 
@@ -94,6 +104,10 @@ echo "30 1 * * * root /usr/sbin/rear checklayout || /usr/sbin/rear mkrescue" >re
 %{_sbindir}/rear
 
 %changelog
+* Thu Apr 19 2018 Pavel Cahyna <pcahyna@redhat.com> - 1.17.2-7
+- Backport upstream PR1383: Allow backup to be stored in ISO for ppc64/ppc64le
+- Resolves: #1478584
+
 * Tue Dec 15 2015 Petr Hracek <phracek@redhat.com> - 1.17.2-4
 - Upstream license 1.17.2 is GPLv2+. Changing license to proper one.
 - Resolves: #981637
