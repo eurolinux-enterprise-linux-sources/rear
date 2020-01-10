@@ -1,7 +1,7 @@
 Summary:     Relax-and-Recover is a Linux disaster recovery and system migration tool
 Name:        rear
 Version:     1.17.2
-Release:     7%{?dist}
+Release:     8%{?dist}
 License:     GPLv2+
 Group:       Applications/File
 URL:         http://relax-and-recover.org/
@@ -9,6 +9,7 @@ URL:         http://relax-and-recover.org/
 # as GitHub stopped with download section we need to go back to Sourceforge for downloads
 Source0:     https://sourceforge.net/projects/rear/files/rear/1.17/%{version}/rear-%{version}.tar.gz
 Patch0:      pr-1383.diff
+Patch14:     rear-bz1672938.patch
 
 BuildRoot:   %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
@@ -104,6 +105,10 @@ echo "30 1 * * * root /usr/sbin/rear checklayout || /usr/sbin/rear mkrescue" >re
 %{_sbindir}/rear
 
 %changelog
+* Mon Jul 29 2019 Pavel Cahyna <pcahyna@redhat.com> - 1.17.2-8
+- Apply upstream PR2034 (multipath optimizations for lots of devices)
+  Resolves: #1680484
+
 * Thu Apr 19 2018 Pavel Cahyna <pcahyna@redhat.com> - 1.17.2-7
 - Backport upstream PR1383: Allow backup to be stored in ISO for ppc64/ppc64le
 - Resolves: #1478584

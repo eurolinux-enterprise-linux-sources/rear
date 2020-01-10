@@ -1,0 +1,94 @@
+diff --git a/usr/share/rear/lib/layout-functions.sh b/usr/share/rear/lib/layout-functions.sh
+index 4e9608e9..5f7c4325 100644
+--- a/usr/share/rear/lib/layout-functions.sh
++++ b/usr/share/rear/lib/layout-functions.sh
+@@ -423,6 +423,9 @@ get_sysfs_name() {
+ ###     /dev/dm-3 -> /dev/mapper/system-tmp
+ ###     /dev/dm-4 -> /dev/mapper/oralun
+ ###     /dev/dm-5 -> /dev/mapper/oralunp1
++###     /dev/sda -> /dev/sda
++###
++### Returns 0 on success, 1 if device is not existing
+ get_device_name() {
+     ### strip common prefixes
+     local name=${1#/dev/}
+@@ -431,47 +434,39 @@ get_device_name() {
+     [[ "$name" ]]
+     BugIfError "Empty string passed to get_device_name"
+ 
+-    ### Translate dm-8 -> mapper/test
+-    local device dev_number mapper_number
+-    if [[ -d /sys/block/$name ]] ; then
++    if [[ "$name" =~ ^mapper/ ]]; then
++        echo "/dev/$name"
++        return 0
++    fi
++
++    if [[ -L "/dev/$name" ]] ; then
++        # Map vg/lv into dm-X, which will then be resolved later
++        name="$( basename $(readlink -f /dev/$name) )"
++    fi
++
++    if [[ "$name" =~ ^dm- ]] ; then
++        local device
+         if [[ -r /sys/block/$name/dm/name ]] ; then
+             ### recent kernels have a dm subfolder
+-            echo "/dev/mapper/$( < /sys/block/$name/dm/name)";
+-            return 0
++            device="$( < /sys/block/$name/dm/name )"
+         else
+-            ### loop over all block devices
+-            dev_number=$( < /sys/block/$name/dev)
+-            for device in /dev/mapper/* ; do
+-                mapper_number=$(dmsetup info -c --noheadings -o major,minor ${device#/dev/mapper/} 2>&8 )
+-                if [ "$dev_number" = "$mapper_number" ] ; then
+-                    echo "$device"
+-                    return 0
+-                fi
+-            done
++            local dev_number=$( < /sys/block/$name/dev)
++            if [[ ! -r "$TMP_DIR/dmsetup_info.txt" ]] ; then
++                dmsetup info --noheadings -c -o name,major,minor > "$TMP_DIR/dmsetup_info.txt"
++            fi
++            device="$( awk -F ':' "/$dev_number\$/ { print \$1 }" < "$TMP_DIR/dmsetup_info.txt" )"
++            [[ -n "$device" ]] || BugError "No device returned for major/minor $dev_number"
+         fi
+-    fi
+-
+-    ### Translate device name to mapper name. ex: vg/lv -> mapper/vg-lv
+-    if [[ "$name" =~ ^mapper/ ]]; then
+-        echo "/dev/$name"
++        echo "/dev/mapper/$device"
+         return 0
+     fi
+-    if my_dm=`readlink /dev/$name`; then
+-       for mapper_dev in /dev/mapper/*; do
+-           if mapper_dm=`readlink $mapper_dev`; then
+-              if [ "$my_dm" = "$mapper_dm" ]; then
+-                 echo $mapper_dev
+-                 return 0
+-              fi
+-           fi
+-       done
+-    fi
+ 
+     ### handle cciss sysfs naming
+     name=${name//!//}
+ 
+     ### just return the possibly nonexisting name
+     echo "/dev/$name"
++    [[ -r "/dev/$name" ]] && return 0
+     return 1
+ }
+ 
+diff --git a/usr/share/rear/rescue/GNU/Linux/27_fc_transport_info.sh b/usr/share/rear/rescue/GNU/Linux/27_fc_transport_info.sh
+index 0de4f60b..64276dfe 100644
+--- a/usr/share/rear/rescue/GNU/Linux/27_fc_transport_info.sh
++++ b/usr/share/rear/rescue/GNU/Linux/27_fc_transport_info.sh
+@@ -1,3 +1,6 @@
++# don't collect this anymore, this can be very slow
++return 0
++
+ # collect output from production SAN disks
+ 
+ find /sys/class/fc_transport -follow -maxdepth 6 \( -name model -o -name vendor -o -name rev -name state -o -name model_name -o -name size -o -name node_name \) 2>/dev/null| egrep -v 'driver|rport|power|drivers|devices' | xargs grep '.' > $VAR_DIR/recovery/fc_transport.info  >&2
