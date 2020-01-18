@@ -2,26 +2,18 @@
 Summary:    Relax-and-Recover is a Linux disaster recovery and system migration tool
 Name:       rear
 Version:    2.4
-Release:    10%{?dist}
+Release:    4%{?dist}
 License:    GPLv3
 Group:      Applications/File
 URL:        http://relax-and-recover.org/
 
 Source0:    https://github.com/rear/rear/archive/%{version}.tar.gz#/rear-%{version}.tar.gz
 Patch4:  rear-bz1492177-warning.patch
-Patch6:  rear-rhbz1610638.patch
-Patch7:  rear-rhbz1610647.patch
 Patch8:  rear-bz1652828-bz1652853.patch
-Patch9:  rear-bz1631183.patch
 Patch10: rear-bz1639705.patch
 Patch11: rear-bz1653214.patch
 Patch12: rear-bz1659137.patch
 Patch14: rear-bz1672938.patch
-Patch15: rear-bz1685166.patch
-Patch16: rear-bz1655956.patch
-Patch17: rear-bz1732328.patch
-Patch18: rear-bz1726982.patch
-Patch20: rear-bz1700807.patch
 
 ExcludeArch: s390x
 ExcludeArch: s390
@@ -64,7 +56,7 @@ Requires:   yaboot
 
 Requires:   crontabs
 Requires:   iproute
-Requires:   xorriso
+Requires:   mkisofs
 
 # mingetty is not available anymore with RHEL 7 (use agetty instead via systemd)
 # Note that CentOS also has %rhel defined so there is no need to use %centos
@@ -107,19 +99,11 @@ fi
 %prep
 %setup 
 %patch4 -p1
-%patch6 -p1
-%patch7 -p1
 %patch8 -p1
-%patch9 -p1
 %patch10 -p1
 %patch11 -p1
 %patch12 -p1
 %patch14 -p1
-%patch15 -p1
-%patch16 -p1
-%patch17 -p1
-%patch18 -p1
-%patch20 -p1
 
 echo "30 1 * * * root /usr/sbin/rear checklayout || /usr/sbin/rear mkrescue" >rear.cron
 
@@ -154,42 +138,6 @@ TZ=UTC %{__make} -C doc
 %{_sbindir}/rear
 
 %changelog
-* Tue Aug 27 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-10
-- Apply upstream PR2122: add additional NBU library path to fix support for
-  NetBackup 8.
-  Resolves: rhbz1700807
-
-* Wed Jul 31 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-9
-- Apply upstream PR2173 - Cannot restore using Bacula method
-  due to "bconsole" not showing its prompt
-  Resolves: rhbz1726982
-
-* Tue Jul 30 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-8
-- Backport fix for upstream issue 2187 (disklayout.conf file contains
-  duplicate lines, breaking recovery in migration mode or when
-  thin pools are used). PR2194, 2196.
-  Resolves: rhbz1732328
-
-* Tue Mar 26 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-7
-- Backport fix for upstream bug 1913 (backup succeeds in case of tar error)
-  Resolves: rhbz1631183
-- Apply upstream patch PR1885
-  Partition information recorded is unexpected when disk has 4K block size
-  Resolves: rhbz1610638
-- Apply upstream patch PR1887
-  LPAR/PPC64 bootlist is incorrectly set when having multiple 'prep' partitions
-  Resolves: rhbz1610647
-- Apply upstream patch PR1993
-  Automatically exclude $BUILD_DIR from the backup
-  Resolves: rhbz1655956
-- Require xorriso instead of genisoimage, it is now the preferred method
-  and supports files over 4GB in size.
-  Resolves: rhbz1462189
-
-* Wed Mar 13 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-5
-- Apply upstream PR2065 (record permanent MAC address for team members)
-  Resolves: rhbz1685166
-
 * Tue Feb 26 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-4
 - Apply upstream PR2034 (multipath optimizations for lots of devices)
 
