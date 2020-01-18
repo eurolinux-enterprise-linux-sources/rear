@@ -1,0 +1,1487 @@
+diff --git a/tests/setup1/README b/tests/setup1/README
+index 75bc000b..1cc4faa8 100644
+--- a/tests/setup1/README
++++ b/tests/setup1/README
+@@ -3,7 +3,7 @@
+                    +----------------------------------+
+ 
+ 
+-You need a VM with 10 network interfaces (eth0 being the main interface).
++You need a VM with 13 network interfaces (eth0 being the main interface).
+ All interfaces except eth0 can be non-reachable.
+ 
+ kvm.xml is an example template of such VM.
+@@ -12,10 +12,11 @@ kvm.xml is an example template of such VM.
+ eth0		IP 192.168.122.x/24 default 192.168.122.1 (x=177)
+ bond12		eth1 + eth2 mode=4 miimon=1000 IP 1.1.1.1
+ bond34		eth3 + eth4 mode=1 miimon=100 IP 2.2.2.2 route 102.0.0.0/8
+-team56		eth5 + eth6 IP 3.3.3.3 route 103.0.0.0/8
++team56		eth5 + eth6 lacp IP 3.3.3.3 route 103.0.0.0/8
+ bridge78	eth7 + eth8 IP 4.4.4.4 route 104.0.0.0/8
+ vlan1eth9	eth9.1 IP 5.5.5.5 route 105.0.0.0/8
+ eth10		IP 6.6.6.6 route 106.0.0.0/8
++team1112	eth11 + eth12 activebackup IP 7.7.7.7 route 107.0.0.0/8
+ 
+ routes:
+ default via 192.168.122.1 dev eth0
+@@ -24,23 +25,24 @@ default via 192.168.122.1 dev eth0
+ 104.0.0.0/8 via 4.4.4.254 dev bridge78
+ 105.0.0.0/8 via 5.5.5.254 dev eth9.1
+ 106.0.0.0/8 via 6.6.6.254 dev eth10
++107.0.0.0/8 via 7.7.7.254 dev team1112
+ 
+ 
+ Running the unit tests:
+ ----------------------
+ 
+-After copying the files and making sure the script has been adapted,
++After copying the network configuration files and rebooting the system,
+ 
+ from the VM, run the following command:
+ 
+-# for i in $(seq 1 8); do ./tcase$i.sh; done
++# for i in $(seq 1 8); do ./tcase${i}.sh; done
+ 
+ This will record the generated network+route files.
+ 
+ Then to verify result, run the following command (this will take down the
+ network, except eth0):
+ 
+-# for i in $(seq 1 8); do ./verify.sh tcase$i_results; done
++# for i in $(seq 1 8); do ./verify.sh tcase${i}_results; done
+ 
+ 
+ -------------------------------------------------------------------------------
+@@ -51,92 +53,98 @@ Test Case #1: standard
+ 
+ Expected results:
+ 
+-team56 -> eth5
+ default via 192.168.122.1 dev eth0
+ 102.0.0.0/8 via 2.2.2.254 dev bond34
+-103.0.0.0/8 via 3.3.3.254 dev eth5
++103.0.0.0/8 via 3.3.3.254 dev team56
+ 104.0.0.0/8 via 4.4.4.254 dev bridge78
+ 105.0.0.0/8 via 5.5.5.254 dev eth9.1
+ 106.0.0.0/8 via 6.6.6.254 dev eth10
++107.0.0.0/8 via 7.7.7.254 dev team1112
+ 
+ 
+ Test Case #2: simplification
+ ------------
+ 
+-SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y
++SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y SIMPLIFY_TEAMING=y
+ 
+ Expected results:
+ 
+-bond12 -> eth1
++bond12 -> bond12 (not simplified because mode=4)
+ bond34 -> eth3
+-team56 -> eth5
++team56 -> team56 (not simplified because runner=lacp)
+ bridge78 -> eth7
++team1112 -> eth11
+ default via 192.168.122.1 dev eth0
+ 102.0.0.0/8 via 2.2.2.254 dev eth3
+-103.0.0.0/8 via 3.3.3.254 dev eth5
++103.0.0.0/8 via 3.3.3.254 dev team56
+ 104.0.0.0/8 via 4.4.4.254 dev eth7
+ 105.0.0.0/8 via 5.5.5.254 dev eth9.1
+ 106.0.0.0/8 via 6.6.6.254 dev eth10
++107.0.0.0/8 via 7.7.7.254 dev eth11
+ 
+ 
+-Test Case #3: standard with eth2, eth4, eth6, eth8, eth10 DOWN
++Test Case #3: standard with eth2, eth4, eth6, eth8, eth10, eth12 DOWN
+ ------------
+ 
+-for eth in eth2 eth4 eth6 eth8 eth10; do ifdown $eth; done
++for eth in eth2 eth4 eth6 eth8 eth10 eth12; do ifdown $eth; done
+ 
+ Expected results:
+ 
+ eth2, eth4, eth6, eth8, eth10 not in file
+ default via 192.168.122.1 dev eth0
+ 102.0.0.0/8 via 2.2.2.254 dev bond34
+-103.0.0.0/8 via 3.3.3.254 dev eth5
++103.0.0.0/8 via 3.3.3.254 dev team56
+ 104.0.0.0/8 via 4.4.4.254 dev bridge78
+ 105.0.0.0/8 via 5.5.5.254 dev eth9.1
++107.0.0.0/8 via 7.7.7.254 dev team1112
+ 
+ 
+-Test Case #4: simplification with eth2, eth4, eth6, eth8, eth10 DOWN
++Test Case #4: simplification with eth2, eth4, eth6, eth8, eth10, eth12 DOWN
+ ------------
+ 
+-for eth in eth2 eth4 eth6 eth8 eth10; do ifdown $eth; done
++for eth in eth2 eth4 eth6 eth8 eth10 eth12; do ifdown $eth; done
+ 
+ Expected results:
+ 
+-eth2, eth4, eth6, eth8, eth10 not in file
++eth4, eth6, eth8, eth10, eth12 not in file
+ default via 192.168.122.1 dev eth0
+ 102.0.0.0/8 via 2.2.2.254 dev eth3
+-103.0.0.0/8 via 3.3.3.254 dev eth5
++103.0.0.0/8 via 3.3.3.254 dev team56
+ 104.0.0.0/8 via 4.4.4.254 dev eth7
+ 105.0.0.0/8 via 5.5.5.254 dev eth9.1
++107.0.0.0/8 via 7.7.7.254 dev eth11
+ 
+ 
+-Test Case #5: standard with eth1, eth3, eth5, eth7, eth9 DOWN
++Test Case #5: standard with eth1, eth3, eth5, eth7, eth9, eth11 DOWN
+ ------------
+ 
+-for eth in eth1 eth3 eth5 eth7 eth9; do ifdown $eth; done
++for eth in eth1 eth3 eth5 eth7 eth9 eth11; do ifdown $eth; done
+ 
+ Expected results:
+ 
+ eth2, eth4, eth6, eth8, eth10 not in file
+ default via 192.168.122.1 dev eth0
+ 102.0.0.0/8 via 2.2.2.254 dev bond34
+-103.0.0.0/8 via 3.3.3.254 dev eth6
++103.0.0.0/8 via 3.3.3.254 dev team56
+ 104.0.0.0/8 via 4.4.4.254 dev bridge78
+ 106.0.0.0/8 via 6.6.6.254 dev eth10
++107.0.0.0/8 via 7.7.7.254 dev team1112
+ 
+ 
+-Test Case #6: simplification with eth1, eth3, eth5, eth7, eth9 DOWN
++Test Case #6: simplification with eth1, eth3, eth5, eth7, eth9, eth11 DOWN
+ ------------
+ 
+-for eth in eth1 eth3 eth5 eth7 eth9; do ifdown $eth; done
++for eth in eth1 eth3 eth5 eth7 eth9 eth11; do ifdown $eth; done
+ 
+ Expected results:
+ 
+-eth2, eth4, eth6, eth8, eth10 not in file
++eth4, eth6, eth8, eth10 not in file
+ default via 192.168.122.1 dev eth0
+ 102.0.0.0/8 via 2.2.2.254 dev eth4
+-103.0.0.0/8 via 3.3.3.254 dev eth6
++103.0.0.0/8 via 3.3.3.254 dev team56
+ 104.0.0.0/8 via 4.4.4.254 dev eth8
+ 106.0.0.0/8 via 6.6.6.254 dev eth10
++107.0.0.0/8 via 7.7.7.254 dev eth12
+ 
+ 
+ Test Case #7: IP address mapping
+@@ -149,6 +157,7 @@ bond34	2.2.2.100/16
+ bridge78	4.4.4.100/24
+ #eth9.1	5.5.5.100/24
+ eth10	6.6.6.100/16
++team1112	7.7.7.100/16
+ 
+ Expected results:
+ 
+@@ -156,14 +165,15 @@ bond12 -> 1.1.1.100/16
+ bond34 -> 2.2.2.100/16
+ eth5 -> 3.3.3.3/16 (no mapping)
+ bridge78 -> 4.4.4.100/24
+-eth9.1 => 5.5.5.5/24 (no mapping)
+-eth10 => 6.6.6.100/16
++eth9.1 -> 5.5.5.5/24 (no mapping)
++eth10 -> 6.6.6.100/16
++team1112 -> 7.7.7.100/16
+ 
+ 
+ Test Case #8: IP address mapping & simplification
+ ------------
+ 
+-SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y
++SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y SIMPLIFY_TEAMING=y
+ 
+ # cat mappings/ip_addresses 
+ bond12	1.1.1.100/16
+@@ -172,12 +182,14 @@ bond34	2.2.2.100/16
+ bridge78	4.4.4.100/24
+ #eth9.1	5.5.5.100/24
+ eth10	6.6.6.100/16
++team1112	7.7.7.100/16
+ 
+ Expected results:
+ 
+-eth1 => 1.1.1.100/16
+-eth3 => 2.2.2.100/16
+-eth5 => 3.3.3.3/16 (no mapping)
+-eth7 => 4.4.4.100/24
+-eth9.1 => 5.5.5.5/24 (no mapping)
+-eth10 => 6.6.6.100/16
++bond12 -> 1.1.1.100/16
++eth3 -> 2.2.2.100/16
++eth5 -> 3.3.3.3/16 (no mapping)
++eth7 -> 4.4.4.100/24
++eth9.1 -> 5.5.5.5/24 (no mapping)
++eth10 -> 6.6.6.100/16
++eth11 -> 7.7.7.100/16
+diff --git a/tests/setup1/etc/sysconfig/network-scripts/ifcfg-eth11 b/tests/setup1/etc/sysconfig/network-scripts/ifcfg-eth11
+new file mode 100644
+index 00000000..f8709b3e
+--- /dev/null
++++ b/tests/setup1/etc/sysconfig/network-scripts/ifcfg-eth11
+@@ -0,0 +1,6 @@
++NAME="eth11"
++DEVICE="eth11"
++ONBOOT="yes"
++TEAM_MASTER="team1112"
++DEVICETYPE="TeamPort"
++TYPE="Ethernet"
+diff --git a/tests/setup1/etc/sysconfig/network-scripts/ifcfg-eth12 b/tests/setup1/etc/sysconfig/network-scripts/ifcfg-eth12
+new file mode 100644
+index 00000000..a5d62722
+--- /dev/null
++++ b/tests/setup1/etc/sysconfig/network-scripts/ifcfg-eth12
+@@ -0,0 +1,6 @@
++NAME="eth12"
++DEVICE="eth12"
++ONBOOT="yes"
++TEAM_MASTER="team1112"
++DEVICETYPE="TeamPort"
++TYPE="Ethernet"
+diff --git a/tests/setup1/etc/sysconfig/network-scripts/ifcfg-team1112 b/tests/setup1/etc/sysconfig/network-scripts/ifcfg-team1112
+new file mode 100644
+index 00000000..fd48fb47
+--- /dev/null
++++ b/tests/setup1/etc/sysconfig/network-scripts/ifcfg-team1112
+@@ -0,0 +1,9 @@
++DEVICE="team1112"
++TEAM_CONFIG='{"device":"team1112","runner":{"name":"activebackup"},"link_watch":{"name":"ethtool"},"ports":{"eth11":{"prio":-10,"sticky":true},"eth12":{"prio":100}}}'
++PROXY_METHOD="none"
++BROWSER_ONLY="no"
++NAME="team1112"
++ONBOOT="yes"
++DEVICETYPE="Team"
++IPADDR=7.7.7.7
++PREFIX=16
+diff --git a/tests/setup1/etc/sysconfig/network-scripts/route-team1112 b/tests/setup1/etc/sysconfig/network-scripts/route-team1112
+new file mode 100644
+index 00000000..d3e82f33
+--- /dev/null
++++ b/tests/setup1/etc/sysconfig/network-scripts/route-team1112
+@@ -0,0 +1 @@
++107.0.0.0/8 via 7.7.7.254
+diff --git a/tests/setup1/kvm.xml b/tests/setup1/kvm.xml
+index 3e7e84aa..2e7d10cf 100644
+--- a/tests/setup1/kvm.xml
++++ b/tests/setup1/kvm.xml
+@@ -106,6 +106,14 @@
+       <model type='virtio'/>
+       <address type='pci' domain='0x0000' bus='0x00' slot='0x12' function='0x0'/>
+     </interface>
++    <interface type='network'>
++      <model type='virtio'/>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x13' function='0x0'/>
++    </interface>
++    <interface type='network'>
++      <model type='virtio'/>
++      <address type='pci' domain='0x0000' bus='0x00' slot='0x14' function='0x0'/>
++    </interface>
+     <serial type='pty'>
+       <target port='0'/>
+     </serial>
+diff --git a/tests/setup1/mappings/ip_addresses b/tests/setup1/mappings/ip_addresses
+index 145300b9..102fdfcf 100644
+--- a/tests/setup1/mappings/ip_addresses
++++ b/tests/setup1/mappings/ip_addresses
+@@ -4,3 +4,4 @@ bond34	2.2.2.100/16
+ bridge78	4.4.4.100/24
+ #eth9.1	5.5.5.100/24
+ eth10	6.6.6.100/16
++team1112	7.7.7.100/16
+diff --git a/tests/setup1/run.sh b/tests/setup1/run.sh
+index 8dbc436b..3de8a5ba 100644
+--- a/tests/setup1/run.sh
++++ b/tests/setup1/run.sh
+@@ -4,9 +4,9 @@ echo
+ echo "$0"
+ echo
+ 
+-REAR_DIR="/path/to/rear/sources"
++REAR_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]}")/../..")"
+ 
+-RESULT_DIR="/root/$(basename $0 .sh)_results"
++RESULT_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]}")")/$(basename $0 .sh)_results"
+ mkdir -p $RESULT_DIR
+ 
+ function DebugPrint () {
+@@ -41,9 +41,10 @@ function has_binary () {
+ 	which $1 >/dev/null 2>&1
+ }
+ 
+-TMP_DIR=/root/tmp
++TMP_DIR="/tmp/$(basename "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")"
+ 
+-rm -fr $TMP_DIR
++rm -fr $TMP_DIR >/dev/null 2>&1
++mkdir -p $TMP_DIR
+ 
+ # Add to sed -e below to test "ip_link_supports_bridge='false'" (RHEL6)
+ #    -e "s#\$ip_link_supports_bridge#'false'#" \
+@@ -53,13 +54,13 @@ rm -fr $TMP_DIR
+ 
+ # Add to sed -e below to have code using 'brctl' instead of 'ip link' (RHEL6)
+ #    -e "s#\$net_devices_have_lower_links#'false'#" \
+-sed -e "s#^network_devices_setup_script=.*#network_devices_setup_script=/tmp/60-network-devices.sh#" \
+-    $REAR_DIR/usr/share/rear/rescue/GNU/Linux/310_network_devices.sh > /tmp/310_network_devices.sh
+-sed "s#^netscript=.*#netscript=/tmp/62-routing.sh#" $REAR_DIR/usr/share/rear/rescue/GNU/Linux/350_routing.sh > /tmp/350_routing.sh
++sed -e "s#^network_devices_setup_script=.*#network_devices_setup_script=$TMP_DIR/60-network-devices.sh#" \
++    $REAR_DIR/usr/share/rear/rescue/GNU/Linux/310_network_devices.sh > $TMP_DIR/310_network_devices.sh
++sed "s#^network_routing_setup_script=.*#network_routing_setup_script=$TMP_DIR/62-routing.sh#" $REAR_DIR/usr/share/rear/rescue/GNU/Linux/350_routing.sh > $TMP_DIR/350_routing.sh
+ 
+-. /tmp/310_network_devices.sh
+-. /tmp/350_routing.sh
++. $TMP_DIR/310_network_devices.sh
++. $TMP_DIR/350_routing.sh
+ 
+-for f in /tmp/60-network-devices.sh /tmp/62-routing.sh; do
++for f in $TMP_DIR/60-network-devices.sh $TMP_DIR/62-routing.sh; do
+ 	grep -v "dev eth0" $f > $RESULT_DIR/$(basename $f)
+ done
+diff --git a/tests/setup1/tcase1.sh b/tests/setup1/tcase1.sh
+index 597f3f5c..7b5032c7 100755
+--- a/tests/setup1/tcase1.sh
++++ b/tests/setup1/tcase1.sh
+@@ -1,6 +1,5 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup1/tcase1_results/ip_a.expected b/tests/setup1/tcase1_results/ip_a.expected
+index e039f6f9..415d840b 100644
+--- a/tests/setup1/tcase1_results/ip_a.expected
++++ b/tests/setup1/tcase1_results/ip_a.expected
+@@ -2,14 +2,15 @@ eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master b
+ eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth4: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+-eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5
+-eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bridge78 state UP qlen 1000
+ eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bridge78 state UP qlen 1000
+ eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 6.6.6.6/16 scope global eth10
++eth11: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team1112 state UP qlen 1000
++eth12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team1112 state UP qlen 1000
+ bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 1.1.1.1/16 scope global bond12
+ bond34: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+@@ -18,3 +19,7 @@ bridge78: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen
+     inet 4.4.4.4/24 scope global bridge78
+ eth9.1@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 5.5.5.5/24 scope global eth9.1
++team1112: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 7.7.7.7/16 scope global team1112
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
+diff --git a/tests/setup1/tcase1_results/ip_r.expected b/tests/setup1/tcase1_results/ip_r.expected
+index 0e5ee87c..f246714c 100644
+--- a/tests/setup1/tcase1_results/ip_r.expected
++++ b/tests/setup1/tcase1_results/ip_r.expected
+@@ -3,9 +3,11 @@
+ 104.0.0.0/8 via 4.4.4.254 
+ 105.0.0.0/8 via 5.5.5.254 
+ 106.0.0.0/8 via 6.6.6.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.1 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.2 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.4 
+ 5.5.5.0/24 proto kernel scope link src 5.5.5.5 
+ 6.6.0.0/16 proto kernel scope link src 6.6.6.6 
++7.7.0.0/16 proto kernel scope link src 7.7.7.7 
+diff --git a/tests/setup1/tcase2.sh b/tests/setup1/tcase2.sh
+index faa39396..65d1aa34 100755
+--- a/tests/setup1/tcase2.sh
++++ b/tests/setup1/tcase2.sh
+@@ -1,9 +1,9 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup1/tcase2_results/ip_a.expected b/tests/setup1/tcase2_results/ip_a.expected
+index 51280843..21c5e686 100644
+--- a/tests/setup1/tcase2_results/ip_a.expected
++++ b/tests/setup1/tcase2_results/ip_a.expected
+@@ -1,17 +1,22 @@
+-eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 1.1.1.1/16 scope global eth1
+-eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.1/16 scope global bond12
++eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
++eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 2.2.2.2/16 scope global eth3
+ eth4: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5
+-eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 4.4.4.4/24 scope global eth7
+ eth8: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 6.6.6.6/16 scope global eth10
++eth11: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
++    inet 7.7.7.7/16 scope global eth11
++eth12: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth9.1@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 5.5.5.5/24 scope global eth9.1
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
+diff --git a/tests/setup1/tcase2_results/ip_r.expected b/tests/setup1/tcase2_results/ip_r.expected
+index 0e5ee87c..f246714c 100644
+--- a/tests/setup1/tcase2_results/ip_r.expected
++++ b/tests/setup1/tcase2_results/ip_r.expected
+@@ -3,9 +3,11 @@
+ 104.0.0.0/8 via 4.4.4.254 
+ 105.0.0.0/8 via 5.5.5.254 
+ 106.0.0.0/8 via 6.6.6.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.1 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.2 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.4 
+ 5.5.5.0/24 proto kernel scope link src 5.5.5.5 
+ 6.6.0.0/16 proto kernel scope link src 6.6.6.6 
++7.7.0.0/16 proto kernel scope link src 7.7.7.7 
+diff --git a/tests/setup1/tcase3.sh b/tests/setup1/tcase3.sh
+index 45ce04ce..7ab38f3b 100755
+--- a/tests/setup1/tcase3.sh
++++ b/tests/setup1/tcase3.sh
+@@ -1,10 +1,9 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+-for eth in eth2 eth4 eth6 eth8 eth10; do ifdown $eth; done
++for eth in eth2 eth4 eth6 eth8 eth10 eth12; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+-for eth in eth2 eth4 eth6 eth8 eth10; do ifup $eth; done
++for eth in eth2 eth4 eth6 eth8 eth10 eth12; do ifup $eth; done
+diff --git a/tests/setup1/tcase3_results/ip_a.expected b/tests/setup1/tcase3_results/ip_a.expected
+index 9adf521d..6071fb27 100644
+--- a/tests/setup1/tcase3_results/ip_a.expected
++++ b/tests/setup1/tcase3_results/ip_a.expected
+@@ -2,13 +2,14 @@ eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master b
+ eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth3: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth4: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5
++eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bridge78 state UP qlen 1000
+ eth8: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth11: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team1112 state UP qlen 1000
++eth12: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 1.1.1.1/16 scope global bond12
+ bond34: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+@@ -17,3 +18,7 @@ bridge78: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen
+     inet 4.4.4.4/24 scope global bridge78
+ eth9.1@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 5.5.5.5/24 scope global eth9.1
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
++team1112: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 7.7.7.7/16 scope global team1112
+diff --git a/tests/setup1/tcase3_results/ip_r.expected b/tests/setup1/tcase3_results/ip_r.expected
+index 62f16947..223a7db1 100644
+--- a/tests/setup1/tcase3_results/ip_r.expected
++++ b/tests/setup1/tcase3_results/ip_r.expected
+@@ -2,8 +2,10 @@
+ 103.0.0.0/8 via 3.3.3.254 
+ 104.0.0.0/8 via 4.4.4.254 
+ 105.0.0.0/8 via 5.5.5.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.1 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.2 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.4 
+ 5.5.5.0/24 proto kernel scope link src 5.5.5.5 
++7.7.0.0/16 proto kernel scope link src 7.7.7.7 
+diff --git a/tests/setup1/tcase4.sh b/tests/setup1/tcase4.sh
+index d28d2606..ac22ea73 100755
+--- a/tests/setup1/tcase4.sh
++++ b/tests/setup1/tcase4.sh
+@@ -1,13 +1,13 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+-for eth in eth2 eth4 eth6 eth8 eth10; do ifdown $eth; done
++for eth in eth2 eth4 eth6 eth8 eth10 eth12; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+-for eth in eth2 eth4 eth6 eth8 eth10; do ifup $eth; done
++for eth in eth2 eth4 eth6 eth8 eth10 eth12; do ifup $eth; done
+diff --git a/tests/setup1/tcase4_results/ip_a.expected b/tests/setup1/tcase4_results/ip_a.expected
+index e12bd4d0..7112b5af 100644
+--- a/tests/setup1/tcase4_results/ip_a.expected
++++ b/tests/setup1/tcase4_results/ip_a.expected
+@@ -1,16 +1,21 @@
+-eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 1.1.1.1/16 scope global eth1
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.1/16 scope global bond12
++eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 2.2.2.2/16 scope global eth3
+ eth4: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5
++eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 4.4.4.4/24 scope global eth7
+ eth8: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth11: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
++    inet 7.7.7.7/16 scope global eth11
++eth12: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth9.1@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 5.5.5.5/24 scope global eth9.1
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
+diff --git a/tests/setup1/tcase4_results/ip_r.expected b/tests/setup1/tcase4_results/ip_r.expected
+index 62f16947..223a7db1 100644
+--- a/tests/setup1/tcase4_results/ip_r.expected
++++ b/tests/setup1/tcase4_results/ip_r.expected
+@@ -2,8 +2,10 @@
+ 103.0.0.0/8 via 3.3.3.254 
+ 104.0.0.0/8 via 4.4.4.254 
+ 105.0.0.0/8 via 5.5.5.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.1 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.2 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.4 
+ 5.5.5.0/24 proto kernel scope link src 5.5.5.5 
++7.7.0.0/16 proto kernel scope link src 7.7.7.7 
+diff --git a/tests/setup1/tcase5.sh b/tests/setup1/tcase5.sh
+index adb09bda..dc786a8a 100755
+--- a/tests/setup1/tcase5.sh
++++ b/tests/setup1/tcase5.sh
+@@ -1,10 +1,9 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+-for eth in eth1 eth3 eth5 eth7 eth9; do ifdown $eth; done
++for eth in eth1 eth3 eth5 eth7 eth9 eth11; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+-for eth in eth1 eth3 eth5 eth7 eth9; do ifup $eth; done
++for eth in eth1 eth3 eth5 eth7 eth9 eth11; do ifup $eth; done
+diff --git a/tests/setup1/tcase5_results/ip_a.expected b/tests/setup1/tcase5_results/ip_a.expected
+index bd1152c8..e55915fc 100644
+--- a/tests/setup1/tcase5_results/ip_a.expected
++++ b/tests/setup1/tcase5_results/ip_a.expected
+@@ -3,16 +3,21 @@ eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master b
+ eth3: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth4: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth5: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth6
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth7: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bridge78 state UP qlen 1000
+ eth9: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 6.6.6.6/16 scope global eth10
++eth11: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team1112 state UP qlen 1000
+ bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 1.1.1.1/16 scope global bond12
+ bond34: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 2.2.2.2/16 scope global bond34
+ bridge78: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 4.4.4.4/24 scope global bridge78
++team1112: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 7.7.7.7/16 scope global team1112
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
+diff --git a/tests/setup1/tcase5_results/ip_r.expected b/tests/setup1/tcase5_results/ip_r.expected
+index 87a8f9fe..50638c8a 100644
+--- a/tests/setup1/tcase5_results/ip_r.expected
++++ b/tests/setup1/tcase5_results/ip_r.expected
+@@ -2,8 +2,10 @@
+ 103.0.0.0/8 via 3.3.3.254 
+ 104.0.0.0/8 via 4.4.4.254 
+ 106.0.0.0/8 via 6.6.6.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.1 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.2 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.4 
+ 6.6.0.0/16 proto kernel scope link src 6.6.6.6 
++7.7.0.0/16 proto kernel scope link src 7.7.7.7 
+diff --git a/tests/setup1/tcase6.sh b/tests/setup1/tcase6.sh
+index 0f11c0ae..698b88c3 100755
+--- a/tests/setup1/tcase6.sh
++++ b/tests/setup1/tcase6.sh
+@@ -1,13 +1,13 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+-for eth in eth1 eth3 eth5 eth7 eth9; do ifdown $eth; done
++for eth in eth1 eth3 eth5 eth7 eth9 eth11; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+-for eth in eth1 eth3 eth5 eth7 vlan1eth9; do ifup $eth; done
++for eth in eth1 eth3 eth5 eth7 vlan1eth9 eth11; do ifup $eth; done
+diff --git a/tests/setup1/tcase6_results/ip_a.expected b/tests/setup1/tcase6_results/ip_a.expected
+index c04e1e12..4f086280 100644
+--- a/tests/setup1/tcase6_results/ip_a.expected
++++ b/tests/setup1/tcase6_results/ip_a.expected
+@@ -1,15 +1,20 @@
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.1/16 scope global bond12
+ eth1: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 1.1.1.1/16 scope global eth2
++eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 2.2.2.2/16 scope global eth4
+ eth5: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth6
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth7: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 4.4.4.4/24 scope global eth8
+ eth9: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 6.6.6.6/16 scope global eth10
++eth11: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
++    inet 7.7.7.7/16 scope global eth12
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
+diff --git a/tests/setup1/tcase6_results/ip_r.expected b/tests/setup1/tcase6_results/ip_r.expected
+index 87a8f9fe..50638c8a 100644
+--- a/tests/setup1/tcase6_results/ip_r.expected
++++ b/tests/setup1/tcase6_results/ip_r.expected
+@@ -2,8 +2,10 @@
+ 103.0.0.0/8 via 3.3.3.254 
+ 104.0.0.0/8 via 4.4.4.254 
+ 106.0.0.0/8 via 6.6.6.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.1 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.2 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.4 
+ 6.6.0.0/16 proto kernel scope link src 6.6.6.6 
++7.7.0.0/16 proto kernel scope link src 7.7.7.7 
+diff --git a/tests/setup1/tcase7.sh b/tests/setup1/tcase7.sh
+index 57b3cdff..7dc07f63 100755
+--- a/tests/setup1/tcase7.sh
++++ b/tests/setup1/tcase7.sh
+@@ -1,5 +1,5 @@
+ #!/bin/bash
+ 
+-CONFIG_DIR=/root
++CONFIG_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup1/tcase7_results/ip_a.expected b/tests/setup1/tcase7_results/ip_a.expected
+index c6ace88f..dba7dab6 100644
+--- a/tests/setup1/tcase7_results/ip_a.expected
++++ b/tests/setup1/tcase7_results/ip_a.expected
+@@ -2,14 +2,15 @@ eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master b
+ eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth4: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+-eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5
+-eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bridge78 state UP qlen 1000
+ eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bridge78 state UP qlen 1000
+ eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 6.6.6.100/16 scope global eth10
++eth11: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team1112 state UP qlen 1000
++eth12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team1112 state UP qlen 1000
+ bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 1.1.1.100/16 scope global bond12
+ bond34: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+@@ -18,3 +19,7 @@ bridge78: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen
+     inet 4.4.4.100/24 scope global bridge78
+ eth9.1@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 5.5.5.5/24 scope global eth9.1
++team1112: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 7.7.7.100/16 scope global team1112
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
+diff --git a/tests/setup1/tcase7_results/ip_r.expected b/tests/setup1/tcase7_results/ip_r.expected
+index 2481d7f3..a89163a6 100644
+--- a/tests/setup1/tcase7_results/ip_r.expected
++++ b/tests/setup1/tcase7_results/ip_r.expected
+@@ -3,9 +3,11 @@
+ 104.0.0.0/8 via 4.4.4.254 
+ 105.0.0.0/8 via 5.5.5.254 
+ 106.0.0.0/8 via 6.6.6.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.100 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.100 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.100 
+ 5.5.5.0/24 proto kernel scope link src 5.5.5.5 
+ 6.6.0.0/16 proto kernel scope link src 6.6.6.100 
++7.7.0.0/16 proto kernel scope link src 7.7.7.100 
+diff --git a/tests/setup1/tcase8.sh b/tests/setup1/tcase8.sh
+index c40c5e15..6982d005 100755
+--- a/tests/setup1/tcase8.sh
++++ b/tests/setup1/tcase8.sh
+@@ -1,8 +1,9 @@
+ #!/bin/bash
+ 
+-CONFIG_DIR=/root
++CONFIG_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup1/tcase8_results/ip_a.expected b/tests/setup1/tcase8_results/ip_a.expected
+index 6801434d..fb0e2d1e 100644
+--- a/tests/setup1/tcase8_results/ip_a.expected
++++ b/tests/setup1/tcase8_results/ip_a.expected
+@@ -1,17 +1,22 @@
+-eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 1.1.1.100/16 scope global eth1
+-eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.100/16 scope global bond12
++eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
++eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 2.2.2.100/16 scope global eth3
+ eth4: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5
+-eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team56 state UP qlen 1000
+ eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 4.4.4.100/24 scope global eth7
+ eth8: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+     inet 6.6.6.100/16 scope global eth10
++eth11: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
++    inet 7.7.7.100/16 scope global eth11
++eth12: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth9.1@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 5.5.5.5/24 scope global eth9.1
++team56: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team56
+diff --git a/tests/setup1/tcase8_results/ip_r.expected b/tests/setup1/tcase8_results/ip_r.expected
+index 2481d7f3..a89163a6 100644
+--- a/tests/setup1/tcase8_results/ip_r.expected
++++ b/tests/setup1/tcase8_results/ip_r.expected
+@@ -3,9 +3,11 @@
+ 104.0.0.0/8 via 4.4.4.254 
+ 105.0.0.0/8 via 5.5.5.254 
+ 106.0.0.0/8 via 6.6.6.254 
++107.0.0.0/8 via 7.7.7.254 
+ 1.1.0.0/16 proto kernel scope link src 1.1.1.100 
+ 2.2.0.0/16 proto kernel scope link src 2.2.2.100 
+ 3.3.0.0/16 proto kernel scope link src 3.3.3.3 
+ 4.4.4.0/24 proto kernel scope link src 4.4.4.100 
+ 5.5.5.0/24 proto kernel scope link src 5.5.5.5 
+ 6.6.0.0/16 proto kernel scope link src 6.6.6.100 
++7.7.0.0/16 proto kernel scope link src 7.7.7.100 
+diff --git a/tests/setup1/verify.sh b/tests/setup1/verify.sh
+index a9fd9c6c..146d017b 100755
+--- a/tests/setup1/verify.sh
++++ b/tests/setup1/verify.sh
+@@ -32,7 +32,7 @@ DEVICES="$( ls /sys/class/net/ | egrep -wv "(bonding_masters|eth0|lo)" )"
+ 
+ for dev in $DEVICES; do
+ 	ip addr show dev $dev
+-done 2>/dev/null | egrep -w "(mtu|inet)" | sed "s/^[0-9]*: //" > $tmpfile_ipa
++done 2>/dev/null | egrep -w "(mtu|inet)" | sed -e "s/^[0-9]*: //" -e "s/ group \S* / /" > $tmpfile_ipa
+ 
+ for dev in $DEVICES; do
+ 	ip r show dev $dev
+diff --git a/tests/setup2/README b/tests/setup2/README
+index 40731f83..34b123fb 100644
+--- a/tests/setup2/README
++++ b/tests/setup2/README
+@@ -3,7 +3,7 @@
+                    +----------------------------------+
+ 
+ 
+-You need a VM with 10 network interfaces (eth0 being the main interface).
++You need a VM with 11 network interfaces (eth0 being the main interface).
+ All interfaces except eth0 can be non-reachable.
+ 
+ kvm.xml is an example template of such VM.
+@@ -31,18 +31,18 @@ default via 192.168.122.1 dev eth0
+ Running the unit tests:
+ ----------------------
+ 
+-After copying the files and making sure the script has been adapted,
++After copying the network configuration files and rebooting the system,
+ 
+ from the VM, run the following command:
+ 
+-# for i in $(seq 1 8); do ./tcase$i.sh; done
++# for i in $(seq 1 8); do ./tcase${i}.sh; done
+ 
+ This will record the generated network+route files.
+ 
+ Then to verify result, run the following command (this will take down the
+ network, except eth0):
+ 
+-# for i in $(seq 1 8); do ./verify.sh tcase$i_results; done
++# for i in $(seq 1 8); do ./verify.sh tcase${i}_results; done
+ 
+ 
+ -------------------------------------------------------------------------------
+@@ -64,15 +64,15 @@ team89 -> eth8
+ Test Case #2: simplification
+ ------------
+ 
+-SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y
++SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y SIMPLIFY_TEAMING=y
+ 
+ Expected results:
+ 
+-bond12 -> eth1
++bond12 -> bond12 (not simplified, because mode=4)
+ bond34 -> eth3
+ bridge2 -> eth3.2
+ team567 -> eth5.5
+-team89 -> eth8
++team89 -> team89 (not simplified, because runner=lacp)
+ bridge3 -> eth10.3
+ 
+ 
+@@ -100,7 +100,6 @@ for eth in eth2 eth4 eth6 eth8 eth10; do ifdown $eth; done
+ Expected results:
+ 
+ eth2, eth4, eth6, eth8, eth10 not in file
+-bond12 -> eth1
+ bond34 -> eth3
+ bridge2 -> eth3.2
+ team567 -> eth5.5
+@@ -136,7 +135,6 @@ for eth in eth1 eth3 eth5 eth7 eth9; do ifdown $eth; done
+ Expected results:
+ 
+ eth2, eth4, eth6, eth8, eth10 not in file
+-bond12 -> eth2
+ bond34 -> eth4
+ team567 -> eth6
+ team89 -> eth8
+@@ -168,7 +166,7 @@ bridge3 -> 4.4.4.100/24
+ Test Case #8: IP address mapping & simplification
+ ------------
+ 
+-SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y
++SIMPLIFY_BONDING=y SIMPLIFY_BRIDGE=y SIMPLIFY_TEAMING=y
+ 
+ # cat mappings/ip_addresses 
+ bond12.1	1.1.1.100/16
+diff --git a/tests/setup2/tcase1.sh b/tests/setup2/tcase1.sh
+index 597f3f5c..7b5032c7 100755
+--- a/tests/setup2/tcase1.sh
++++ b/tests/setup2/tcase1.sh
+@@ -1,6 +1,5 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup2/tcase1_results/ip_a.expected b/tests/setup2/tcase1_results/ip_a.expected
+index 8e36b66c..23a2d8df 100644
+--- a/tests/setup2/tcase1_results/ip_a.expected
++++ b/tests/setup2/tcase1_results/ip_a.expected
+@@ -14,10 +14,12 @@ eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master b
+ eth3: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth4: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth5.5@eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5.5
+-eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth7: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth8.3@eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
+-eth9: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth5.5@eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master team567 state UP qlen 1000
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team567 state UP qlen 1000
++eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team567 state UP qlen 1000
++eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team89 state UP qlen 1000
++eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team89 state UP qlen 1000
++team567: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team567
++team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++team89.3@team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
+diff --git a/tests/setup2/tcase2.sh b/tests/setup2/tcase2.sh
+index faa39396..65d1aa34 100755
+--- a/tests/setup2/tcase2.sh
++++ b/tests/setup2/tcase2.sh
+@@ -1,9 +1,9 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup2/tcase2_results/ip_a.expected b/tests/setup2/tcase2_results/ip_a.expected
+index b2043ea2..097c6ed8 100644
+--- a/tests/setup2/tcase2_results/ip_a.expected
++++ b/tests/setup2/tcase2_results/ip_a.expected
+@@ -1,10 +1,11 @@
+-eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
++bond12.1@bond12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.1/16 scope global bond12.1
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10.3@eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 4.4.4.4/24 scope global eth10.3
+-eth1.1@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 1.1.1.1/16 scope global eth1.1
+-eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth3.2@eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 2.2.2.2/24 scope global eth3.2
+diff --git a/tests/setup2/tcase3.sh b/tests/setup2/tcase3.sh
+index d23a1198..3b792b42 100755
+--- a/tests/setup2/tcase3.sh
++++ b/tests/setup2/tcase3.sh
+@@ -1,10 +1,9 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ for eth in eth2 eth4 eth6 eth8 eth10; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+ for eth in eth2 eth4 eth6 eth8 vlan3eth10; do ifup $eth; done
+diff --git a/tests/setup2/tcase3_results/ip_a.expected b/tests/setup2/tcase3_results/ip_a.expected
+index 0b0c00ba..6cbcf572 100644
+--- a/tests/setup2/tcase3_results/ip_a.expected
++++ b/tests/setup2/tcase3_results/ip_a.expected
+@@ -13,10 +13,12 @@ eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth3: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth4: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth5.5@eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth5.5
++eth5.5@eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master team567 state UP qlen 1000
+ eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth7: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team567 state UP qlen 1000
+ eth8: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth9.3@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
++eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team89 state UP qlen 1000
++team567: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team567
++team89.3@team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
++team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+diff --git a/tests/setup2/tcase4.sh b/tests/setup2/tcase4.sh
+index f66236ff..5d8cfdd5 100755
+--- a/tests/setup2/tcase4.sh
++++ b/tests/setup2/tcase4.sh
+@@ -1,13 +1,13 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+ for eth in eth2 eth4 eth6 eth8 eth10; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+ for eth in eth2 eth4 eth6 eth8 vlan3eth10; do ifup $eth; done
+diff --git a/tests/setup2/tcase4_results/ip_a.expected b/tests/setup2/tcase4_results/ip_a.expected
+index 8171a018..6afa74e5 100644
+--- a/tests/setup2/tcase4_results/ip_a.expected
++++ b/tests/setup2/tcase4_results/ip_a.expected
+@@ -1,7 +1,8 @@
+-eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
++bond12.1@bond12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.1/16 scope global bond12.1
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth1.1@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 1.1.1.1/16 scope global eth1.1
+ eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth3.2@eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+@@ -13,6 +14,7 @@ eth5.5@eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP q
+ eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth7: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth8: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth9.3@eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 4.4.4.4/24 scope global eth9.3
++eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team89 state UP qlen 1000
++team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++team89.3@team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 4.4.4.4/24 scope global team89.3
+diff --git a/tests/setup2/tcase5.sh b/tests/setup2/tcase5.sh
+index 1085a80d..e332d9af 100755
+--- a/tests/setup2/tcase5.sh
++++ b/tests/setup2/tcase5.sh
+@@ -1,10 +1,9 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ for eth in eth1 eth3 eth5 eth7 eth9; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+ for eth in eth1 eth3 vlan5eth5 eth7 eth9; do ifup $eth; done
+diff --git a/tests/setup2/tcase5_results/ip_a.expected b/tests/setup2/tcase5_results/ip_a.expected
+index 4841575c..2d08e19c 100644
+--- a/tests/setup2/tcase5_results/ip_a.expected
++++ b/tests/setup2/tcase5_results/ip_a.expected
+@@ -14,9 +14,11 @@ eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master b
+ eth3: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth4: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth5: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-    inet 3.3.3.3/16 scope global eth6
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team567 state UP qlen 1000
+ eth7: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth8.3@eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
++eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team89 state UP qlen 1000
+ eth9: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++team567: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.3/16 scope global team567
++team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++team89.3@team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
+diff --git a/tests/setup2/tcase6.sh b/tests/setup2/tcase6.sh
+index 998672bf..b9a5153f 100755
+--- a/tests/setup2/tcase6.sh
++++ b/tests/setup2/tcase6.sh
+@@ -1,13 +1,13 @@
+ #!/bin/bash
+ 
+ unset CONFIG_DIR
+-#CONFIG_DIR=/root
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+ for eth in eth1 eth3 eth5 eth7 eth9; do ifdown $eth; done
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+ 
+ for eth in eth1 eth3 vlan5eth5 eth7 eth9; do ifup $eth; done
+diff --git a/tests/setup2/tcase6_results/ip_a.expected b/tests/setup2/tcase6_results/ip_a.expected
+index 879aff9b..4239377a 100644
+--- a/tests/setup2/tcase6_results/ip_a.expected
++++ b/tests/setup2/tcase6_results/ip_a.expected
+@@ -1,10 +1,11 @@
++bond12.1@bond12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.1/16 scope global bond12.1
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+ eth1: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10.3@eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 4.4.4.4/24 scope global eth10.3
+-eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth2.1@eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 1.1.1.1/16 scope global eth2.1
++eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+ eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth4.2@eth4: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+diff --git a/tests/setup2/tcase7.sh b/tests/setup2/tcase7.sh
+index 57b3cdff..7dc07f63 100755
+--- a/tests/setup2/tcase7.sh
++++ b/tests/setup2/tcase7.sh
+@@ -1,5 +1,5 @@
+ #!/bin/bash
+ 
+-CONFIG_DIR=/root
++CONFIG_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup2/tcase7_results/ip_a.expected b/tests/setup2/tcase7_results/ip_a.expected
+index a1825c41..4136fb4b 100644
+--- a/tests/setup2/tcase7_results/ip_a.expected
++++ b/tests/setup2/tcase7_results/ip_a.expected
+@@ -14,10 +14,12 @@ eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master b
+ eth3: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth4: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond34 state UP qlen 1000
+ eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth5.5@eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 3.3.3.100/16 scope global eth5.5
+-eth6: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth7: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
+-eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+-eth8.3@eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
+-eth9: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth5.5@eth5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master team567 state UP qlen 1000
++eth6: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team567 state UP qlen 1000
++eth7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team567 state UP qlen 1000
++eth8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team89 state UP qlen 1000
++eth9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master team89 state UP qlen 1000
++team567: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 3.3.3.100/16 scope global team567
++team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++team89.3@team89: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master bridge3 state UP qlen 1000
+diff --git a/tests/setup2/tcase8.sh b/tests/setup2/tcase8.sh
+index c40c5e15..6982d005 100755
+--- a/tests/setup2/tcase8.sh
++++ b/tests/setup2/tcase8.sh
+@@ -1,8 +1,9 @@
+ #!/bin/bash
+ 
+-CONFIG_DIR=/root
++CONFIG_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+ 
+ export SIMPLIFY_BONDING=y
+ export SIMPLIFY_BRIDGE=y
++export SIMPLIFY_TEAMING=y
+ 
+-. ./run.sh
++. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/run.sh
+diff --git a/tests/setup2/tcase8_results/ip_a.expected b/tests/setup2/tcase8_results/ip_a.expected
+index 28140aa1..19e11934 100644
+--- a/tests/setup2/tcase8_results/ip_a.expected
++++ b/tests/setup2/tcase8_results/ip_a.expected
+@@ -1,10 +1,11 @@
+-eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
++bond12.1@bond12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++    inet 1.1.1.100/16 scope global bond12.1
++bond12: <BROADCAST,MULTICAST,MASTER,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
++eth1: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth10.3@eth10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 4.4.4.100/24 scope global eth10.3
+-eth1.1@eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+-    inet 1.1.1.100/16 scope global eth1.1
+-eth2: <BROADCAST,MULTICAST> mtu 1500 qdisc pfifo_fast state DOWN qlen 1000
++eth2: <BROADCAST,MULTICAST,SLAVE,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master bond12 state UP qlen 1000
+ eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+ eth3.2@eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP qlen 1000
+     inet 2.2.2.2/24 scope global eth3.2
+diff --git a/usr/share/rear/conf/default.conf b/usr/share/rear/conf/default.conf
+index 796f228a..ef118998 100644
+--- a/usr/share/rear/conf/default.conf
++++ b/usr/share/rear/conf/default.conf
+@@ -2237,15 +2237,16 @@ USE_CFG2HTML=
+ # If SKIP_CFG2HTML is enabled, skip this script (backward compatibility) - the var will become obsolete in rear-1.18
+ # SKIP_CFG2HTML=
+ 
+-# Simplify bonding setups by configuring always the first active device of a bond
+-SIMPLIFY_BONDING=
++# Simplify bonding setups by configuring always the first active device of a
++# bond, except when mode is 4 (IEEE 802.3ad policy)
++SIMPLIFY_BONDING=no
+ 
+ # Simplify bridge setups by configuring always the first active device of a bridge
+-SIMPLIFY_BRIDGE=
++SIMPLIFY_BRIDGE=no
+ 
+-# Simplify team setups by configuring always the first active device of a team
+-# Current implementation only supports this mode
+-#SIMPLIFY_TEAM=
++# Simplify team setups by configuring always the first active device of a team,
++# except when runner is 'lacp' (IEEE 802.3ad policy)
++SIMPLIFY_TEAMING=no
+ 
+ # Serial Console support is enabled if serial devices are found on the system and
+ # then matching kernel command line parameters like 'console=ttyS0,9600 console=ttyS1,9600'
+diff --git a/usr/share/rear/rescue/GNU/Linux/310_network_devices.sh b/usr/share/rear/rescue/GNU/Linux/310_network_devices.sh
+index 8d24d2d5..4698618c 100644
+--- a/usr/share/rear/rescue/GNU/Linux/310_network_devices.sh
++++ b/usr/share/rear/rescue/GNU/Linux/310_network_devices.sh
+@@ -146,7 +146,7 @@ ip link help 2>&1 | grep -qw bridge && ip_link_supports_bridge='true'
+ #
+ #   - if it is a bond
+ #
+-#     - if SIMPLIFY_BONDING is set
++#     - if SIMPLIFY_BONDING is set and mode is not 4 (IEEE 802.3ad policy)
+ #       - configure the first UP underlying interface using ALGO
+ #       - keep record of interface mapping into new underlying interface
+ #     - otherwise
+@@ -157,10 +157,14 @@ ip link help 2>&1 | grep -qw bridge && ip_link_supports_bridge='true'
+ #
+ #     - configure the vlan based on parent's interface
+ #
+-#   - if it is a team, only simplification is currently implemented
++#   - if it is a team
+ #
+-#     - configure the first UP underlying interface using ALGO
+-#     - keep record of interface mapping into new underlying interface
++#     - if SIMPLIFY_TEAMING is set and runner is not 'lacp' (IEEE 802.3ad policy)
++#       - configure the first UP underlying interface using ALGO
++#       - keep record of interface mapping into new underlying interface
++#     - otherwise
++#       - configure the team
++#       - configure all UP underlying interfaces using ALGO
+ #
+ # - in any case, a given interface is only configured once; when an interface
+ #   has already been configured, configuration code should be ignored by
+@@ -470,7 +474,7 @@ function handle_bridge () {
+     local tmpfile=$( mktemp )
+     local itf
+ 
+-    if test "$SIMPLIFY_BRIDGE" ; then
++    if is_true "$SIMPLIFY_BRIDGE" ; then
+         for itf in $( get_lower_interfaces $network_interface ) ; do
+             DebugPrint "$network_interface has lower interface $itf"
+             is_interface_up $itf || continue
+@@ -552,6 +556,7 @@ function handle_bridge () {
+ }
+ 
+ already_set_up_teams=""
++team_initialized=
+ 
+ function handle_team () {
+     local network_interface=$1
+@@ -569,13 +574,58 @@ function handle_team () {
+     fi
+     already_set_up_teams+=" $network_interface"
+ 
+-    # FIXME? Team code below simplifies the configuration, returning first port only
+-    # There should a SIMPLIFY_TEAM variable for that
+-
+     local rc
+     local nitfs=0
+     local tmpfile=$( mktemp )
+     local itf
++    local teaming_runner="$( teamdctl "$network_interface" state item get setup.runner_name )"
++
++    if is_true "$SIMPLIFY_TEAMING" && [ "$teaming_runner" != "lacp" ] ; then
++
++        for itf in $( get_lower_interfaces $network_interface ) ; do
++            DebugPrint "$network_interface has lower interface $itf"
++            is_interface_up $itf || continue
++            is_linked_to_physical $itf || continue
++            handle_interface $itf >$tmpfile
++            rc=$?
++            [ $rc -eq $rc_error ] && continue
++            let nitfs++
++            echo "# Original interface was $network_interface, now is $itf"
++            [ $rc -eq $rc_success ] && cat $tmpfile
++            # itf may have been mapped into some other interface
++            itf=$( get_mapped_network_interface $itf )
++            # We found an interface, so stop here after mapping team to lower interface
++            map_network_interface $network_interface $itf
++            break
++        done
++        rm $tmpfile
++
++        # If we didn't find any lower interface, we are in trouble ...
++        if [ $nitfs -eq 0 ] ; then
++            LogPrintError "Couldn't find any suitable lower interface for '$network_interface'."
++            return $rc_error
++        fi
++
++        # setup_device_params has already been called by interface team was mapped onto
++
++        return $rc_success
++    elif is_true "$SIMPLIFY_TEAMING" ; then
++        # Teaming runner 'lacp' (IEEE 802.3ad policy) cannot be simplified
++        # because there is some special setup on the switch itself, requiring
++        # to keep the system's network interface's configuration intact.
++        LogPrint "Note: not simplifying network configuration for '$network_interface' because teaming runner is 'lacp' (IEEE 802.3ad policy)."
++    fi
++
++    #
++    # Non-simplified teaming mode
++    #
++
++    if [ -z "$team_initialized" ] ; then
++        PROGS=( "${PROGS[@]}" 'teamd' 'teamdctl' )
++        team_initialized="y"
++    fi
++
++    local teamconfig="$( teamdctl -o "$network_interface" config dump actual )"
+ 
+     for itf in $( get_lower_interfaces $network_interface ) ; do
+         DebugPrint "$network_interface has lower interface $itf"
+@@ -585,13 +635,15 @@ function handle_team () {
+         rc=$?
+         [ $rc -eq $rc_error ] && continue
+         let nitfs++
+-        echo "# Original interface was $network_interface, now is $itf"
+         [ $rc -eq $rc_success ] && cat $tmpfile
+         # itf may have been mapped into some other interface
+-        itf=$( get_mapped_network_interface $itf )
+-        # We found an interface, so stop here after mapping team to lower interface
+-        map_network_interface $network_interface $itf
+-        break
++        local newitf=$( get_mapped_network_interface $itf )
++        if [ "$itf" != "$newitf" ] ; then
++            # Fix the teaming configuration
++            teamconfig="$( echo "$teamconfig" | sed "s/\"$itf\"/\"$newitf\"/g" )"
++        fi
++        # Make sure lower device is down before configuring the team
++        echo "ip link set dev $itf down"
+     done
+     rm $tmpfile
+ 
+@@ -601,12 +653,15 @@ function handle_team () {
+         return $rc_error
+     fi
+ 
+-    # setup_device_params has already been called by interface team was mapped onto
++    echo "teamd -d -c '$teamconfig'"
++
++    setup_device_params $network_interface
+ 
+     return $rc_success
+ }
+ 
+ already_set_up_bonds=""
++bond_initialized=
+ 
+ function handle_bond () {
+     local network_interface=$1
+@@ -618,22 +673,19 @@ function handle_bond () {
+ 
+     DebugPrint "$network_interface is a bond"
+ 
+-    if [ -z "$already_set_up_bonds" ] ; then
+-        if ! test "$SIMPLIFY_BONDING" ; then
+-            echo "modprobe bonding"
+-            MODULES=( "${MODULES[@]}" 'bonding' )
+-        fi
+-    elif [[ " $already_set_up_bonds " == *\ $network_interface\ * ]] ; then
++    if [[ " $already_set_up_bonds " == *\ $network_interface\ * ]] ; then
+         DebugPrint "$network_interface already handled..."
+         return $rc_ignore
+     fi
+     already_set_up_bonds+=" $network_interface"
+ 
++    local rc
+     local nitfs=0
+     local tmpfile=$( mktemp )
+     local itf
++    local bonding_mode=$( awk '{ print $2 }' $sysfspath/bonding/mode )
+ 
+-    if test "$SIMPLIFY_BONDING" ; then
++    if is_true "$SIMPLIFY_BONDING" && [ $bonding_mode -ne 4 ] ; then
+         for itf in $( get_lower_interfaces $network_interface ) ; do
+             DebugPrint "$network_interface has lower interface $itf"
+             is_interface_up $itf || continue
+@@ -663,13 +715,23 @@ function handle_bond () {
+         # setup_device_params has already been called by interface bond was mapped onto
+ 
+         return $rc_success
++    elif is_true "$SIMPLIFY_BONDING" ; then
++        # Bond mode '4' (IEEE 802.3ad policy) cannot be simplified because
++        # there is some special setup on the switch itself, requiring to keep
++        # the system's network interface's configuration intact.
++        LogPrint "Note: not simplifying network configuration for '$network_interface' because bonding mode is '4' (IEEE 802.3ad policy)."
+     fi
+ 
+     #
+     # Non-simplified bonding mode
+     #
+ 
+-    local bonding_mode=$( awk '{ print $2 }' $sysfspath/bonding/mode )
++    if [ -z "$bond_initialized" ] ; then
++        echo "modprobe bonding"
++        MODULES=( "${MODULES[@]}" 'bonding' )
++        bond_initialized="y"
++    fi
++
+     local miimon=$( cat $sysfspath/bonding/miimon )
+     local use_carrier=$( cat $sysfspath/bonding/use_carrier )
+ 
+@@ -689,7 +751,8 @@ EOT
+         is_interface_up $itf || continue
+         is_linked_to_physical $itf || continue
+         handle_interface $itf >$tmpfile
+-        [ $? -eq $rc_error ] && continue
++        rc=$?
++        [ $rc -eq $rc_error ] && continue
+         let nitfs++
+         [ $rc -eq $rc_success ] && cat $tmpfile
+         # itf may have been mapped into some other interface
+@@ -884,3 +947,5 @@ unset -f handle_team
+ unset -f handle_bond
+ unset -f handle_vlan
+ unset -f handle_physdev
++
++# vim: set et ts=4 sw=4:

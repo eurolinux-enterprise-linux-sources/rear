@@ -1,0 +1,156 @@
+diff --git a/usr/share/rear/build/GNU/Linux/100_copy_as_is.sh b/usr/share/rear/build/GNU/Linux/100_copy_as_is.sh
+index 9c4212ae..873e244e 100644
+--- a/usr/share/rear/build/GNU/Linux/100_copy_as_is.sh
++++ b/usr/share/rear/build/GNU/Linux/100_copy_as_is.sh
+@@ -54,9 +54,13 @@ Log "copy_as_is_executables = ${copy_as_is_executables[@]}"
+ # add them to the LIBS list if they are not yet included in the copied files:
+ Log "Adding required libraries of executables in all the copied files to LIBS"
+ local required_library=""
+-for required_library in $( RequiredSharedOjects "${copy_as_is_executables[@]}" ) ; do
+-    # Skip when the required library was already actually copied by 'tar' above:
+-    grep -q "$required_library" $copy_as_is_filelist_file && continue
++for required_library in $( RequiredSharedObjects "${copy_as_is_executables[@]}" ) ; do
++    # Skip when the required library was already actually copied by 'tar' above.
++    # grep for a full line (copy_as_is_filelist_file contains 1 file name per line)
++    # to avoid that libraries get skipped when their library path is a substring
++    # of another already copied library, e.g. do not skip /path/to/lib when
++    # /other/path/to/lib was already copied, cf. https://github.com/rear/rear/pull/1976
++    grep -q "^${required_library}\$" $copy_as_is_filelist_file && continue
+     # Skip when the required library is already in LIBS:
+     IsInArray "$required_library" "${LIBS[@]}" && continue
+     Log "Adding required library '$required_library' to LIBS"
+diff --git a/usr/share/rear/build/GNU/Linux/390_copy_binaries_libraries.sh b/usr/share/rear/build/GNU/Linux/390_copy_binaries_libraries.sh
+index f7809bc7..ed02dea9 100644
+--- a/usr/share/rear/build/GNU/Linux/390_copy_binaries_libraries.sh
++++ b/usr/share/rear/build/GNU/Linux/390_copy_binaries_libraries.sh
+@@ -62,16 +62,16 @@ Log "Binaries being copied: ${all_binaries[@]}"
+ copy_binaries "$ROOTFS_DIR/bin" "${all_binaries[@]}"
+ 
+ # Copy libraries:
+-# It is crucial to also have all LIBS itself in all_libs because RequiredSharedOjects()
++# It is crucial to also have all LIBS itself in all_libs because RequiredSharedObjects()
+ # outputs only those libraries that are required by a library but not the library itself
+ # so that without all LIBS itself in all_libs those libraries in LIBS are missing that
+ # are not needed by a binary in all_binaries (all_binaries were already copied above).
+-# RequiredSharedOjects outputs the required shared objects on STDOUT.
++# RequiredSharedObjects outputs the required shared objects on STDOUT.
+ # The output are absolute paths to the required shared objects.
+ # The output can also be symbolic links (also as absolute paths).
+ # In case of symbolic links only the link but not the link target is output.
+ # Therefore for symbolic links also the link target gets copied below.
+-local all_libs=( "${LIBS[@]}" $( RequiredSharedOjects "${all_binaries[@]}" "${LIBS[@]}" ) )
++local all_libs=( "${LIBS[@]}" $( RequiredSharedObjects "${all_binaries[@]}" "${LIBS[@]}" ) )
+ 
+ Log "Libraries being copied: ${all_libs[@]}"
+ local lib=""
+diff --git a/usr/share/rear/build/OPALPBA/Linux-i386/391_list_executable_dependencies.sh b/usr/share/rear/build/OPALPBA/Linux-i386/391_list_executable_dependencies.sh
+index 9803200d..8cb27d78 100644
+--- a/usr/share/rear/build/OPALPBA/Linux-i386/391_list_executable_dependencies.sh
++++ b/usr/share/rear/build/OPALPBA/Linux-i386/391_list_executable_dependencies.sh
+@@ -8,7 +8,7 @@ if is_true $KEEP_BUILD_DIR; then
+     executable_dependencies_list="$TMP_DIR/executable-dependencies"
+ 
+     for executable in "${executables[@]}"; do
+-        dependents=( $(RequiredSharedOjects "$ROOTFS_DIR/$executable") )
++        dependents=( $(RequiredSharedObjects "$ROOTFS_DIR/$executable") )
+         echo "$executable: ${dependents[*]}"
+     done > "$executable_dependencies_list"
+ 
+diff --git a/usr/share/rear/build/default/980_verify_rootfs.sh b/usr/share/rear/build/default/980_verify_rootfs.sh
+index f8b3e8e9..d03e5f34 100644
+--- a/usr/share/rear/build/default/980_verify_rootfs.sh
++++ b/usr/share/rear/build/default/980_verify_rootfs.sh
+@@ -51,6 +51,11 @@ if test "$BACKUP" = "SESAM" ; then
+     # related libraries
+     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SESAM_LD_LIBRARY_PATH
+ fi
++if test "$BACKUP" = "NBU" ; then
++    # Use a NBU-specific LD_LIBRARY_PATH to find NBU libraries
++    # see https://github.com/rear/rear/issues/1974
++    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$NBU_LD_LIBRARY_PATH
++fi
+ # Actually test all binaries for 'not found' libraries.
+ # Find all binaries and libraries also e.g. those that are copied via COPY_AS_IS into other paths:
+ for binary in $( find $ROOTFS_DIR -type f -executable -printf '/%P\n' ); do
+diff --git a/usr/share/rear/conf/default.conf b/usr/share/rear/conf/default.conf
+index 0f0d0675..796f228a 100644
+--- a/usr/share/rear/conf/default.conf
++++ b/usr/share/rear/conf/default.conf
+@@ -1467,7 +1467,8 @@ OBDR_BLOCKSIZE=2048
+ ##
+ #
+ COPY_AS_IS_NBU=( /usr/openv/bin/vnetd /usr/openv/bin/vopied /usr/openv/lib /usr/openv/netbackup /usr/openv/var/auth/[mn]*.txt )
+-COPY_AS_IS_EXCLUDE_NBU=( "/usr/openv/netbackup/logs/*" "/usr/openv/netbackup/bin/bpjava*" "/usr/openv/netbackup/bin/xbp" )
++COPY_AS_IS_EXCLUDE_NBU=( "/usr/openv/netbackup/logs/*" "/usr/openv/netbackup/bin/bpjava*" /usr/openv/netbackup/bin/xbp /usr/openv/netbackup/bin/private /usr/openv/lib/java /usr/openv/lib/shared/vddk /usr/openv/netbackup/baremetal )
++NBU_LD_LIBRARY_PATH="/usr/openv/lib"
+ PROGS_NBU=( )
+ 
+ ##
+diff --git a/usr/share/rear/lib/_input-output-functions.sh b/usr/share/rear/lib/_input-output-functions.sh
+index d5eed43e..bdbf593d 100644
+--- a/usr/share/rear/lib/_input-output-functions.sh
++++ b/usr/share/rear/lib/_input-output-functions.sh
+@@ -324,10 +324,11 @@ function LogToSyslog () {
+ # see https://github.com/rear/rear/issues/729
+ function has_binary () {
+     for bin in $@ ; do
+-        # Suppress success output via stdout (but keep failure output via stderr):
+-        if type $bin 1>/dev/null ; then
+-            return 0
+-        fi
++        # Suppress success output via stdout which is crucial when has_binary is called
++        # in other functions that provide their intended function results via stdout
++        # to not pollute intended function results with intermixed has_binary stdout
++        # (e.g. the RequiredSharedObjects function) but keep failure output via stderr:
++        type $bin 1>/dev/null && return 0
+     done
+     return 1
+ }
+diff --git a/usr/share/rear/lib/linux-functions.sh b/usr/share/rear/lib/linux-functions.sh
+index 6a767367..3fb44e6d 100644
+--- a/usr/share/rear/lib/linux-functions.sh
++++ b/usr/share/rear/lib/linux-functions.sh
+@@ -100,13 +100,13 @@ function FindStorageDrivers () {
+ 
+ # Determine all required shared objects (shared/dynamic libraries)
+ # for programs and/or shared objects (binaries) specified in $@.
+-# RequiredSharedOjects outputs the required shared objects on STDOUT.
++# RequiredSharedObjects outputs the required shared objects on STDOUT.
+ # The output are absolute paths to the required shared objects.
+ # The output can also be symbolic links (also as absolute paths).
+ # In case of symbolic links only the link but not the link target is output.
+-function RequiredSharedOjects () {
+-    has_binary ldd || Error "Cannot run RequiredSharedOjects() because there is no ldd binary"
+-    Log "RequiredSharedOjects: Determining required shared objects"
++function RequiredSharedObjects () {
++    has_binary ldd || Error "Cannot run RequiredSharedObjects() because there is no ldd binary"
++    Log "RequiredSharedObjects: Determining required shared objects"
+     # It uses 'ldd' to determine all required shared objects because 'ldd' outputs
+     # also transitively required shared objects i.e. libraries needed by libraries,
+     # e.g. for /usr/sbin/parted also the libraries needed by the libparted library:
+@@ -164,10 +164,11 @@ function RequiredSharedOjects () {
+     #  2. Line: "        lib (mem-addr)"                 -> virtual library
+     #  3. Line: "        lib => not found"               -> print error to stderr
+     #  4. Line: "        lib => /path/to/lib (mem-addr)" -> print $3 '/path/to/lib'
+-    #  5. Line: "        /path/to/lib (mem-addr)"        -> print $1 '/path/to/lib'
++    #  5. Line: "        /path/to/lib => /path/to/lib2 (mem-addr)" -> print $3 '/path/to/lib2'
++    #  6. Line: "        /path/to/lib (mem-addr)"        -> print $1 '/path/to/lib'
+     ldd "$@" | awk ' /^\t.+ => not found/ { print "Shared object " $1 " not found" > "/dev/stderr" }
+                      /^\t.+ => \// { print $3 }
+-                     /^\t\// { print $1 } ' | sort -u
++                     /^\t\// && !/ => / { print $1 } ' | sort -u
+ }
+ 
+ # Provide a shell, with custom exit-prompt and history
+diff --git a/usr/share/rear/prep/NBU/default/450_check_nbu_client_configured.sh b/usr/share/rear/prep/NBU/default/450_check_nbu_client_configured.sh
+index e01dcdbd..3cc29777 100644
+--- a/usr/share/rear/prep/NBU/default/450_check_nbu_client_configured.sh
++++ b/usr/share/rear/prep/NBU/default/450_check_nbu_client_configured.sh
+@@ -5,5 +5,6 @@
+ Log "Running: /usr/openv/netbackup/bin/bplist command"
+ LANG=C /usr/openv/netbackup/bin/bplist -l -s `date -d "-5 days" \
+ 	"+%m/%d/%Y"` / >/dev/null
+-[ $? -gt 0 ] && LogPrint "WARNING: Netbackup bplist check failed with error code $?.
++rc=$?
++[ $rc -gt 0 ] && LogPrint "WARNING: Netbackup bplist check failed with error code ${rc}.
+ See $RUNTIME_LOGFILE for more details."
