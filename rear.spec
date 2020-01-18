@@ -2,7 +2,7 @@
 Summary:    Relax-and-Recover is a Linux disaster recovery and system migration tool
 Name:       rear
 Version:    2.4
-Release:    7%{?dist}
+Release:    9%{?dist}
 License:    GPLv3
 Group:      Applications/File
 URL:        http://relax-and-recover.org/
@@ -19,6 +19,8 @@ Patch12: rear-bz1659137.patch
 Patch14: rear-bz1672938.patch
 Patch15: rear-bz1685166.patch
 Patch16: rear-bz1655956.patch
+Patch17: rear-bz1732328.patch
+Patch18: rear-bz1726982.patch
 
 ExcludeArch: s390x
 ExcludeArch: s390
@@ -114,6 +116,8 @@ fi
 %patch14 -p1
 %patch15 -p1
 %patch16 -p1
+%patch17 -p1
+%patch18 -p1
 
 echo "30 1 * * * root /usr/sbin/rear checklayout || /usr/sbin/rear mkrescue" >rear.cron
 
@@ -148,6 +152,17 @@ TZ=UTC %{__make} -C doc
 %{_sbindir}/rear
 
 %changelog
+* Wed Jul 31 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-9
+- Apply upstream PR2173 - Cannot restore using Bacula method
+  due to "bconsole" not showing its prompt
+  Resolves: rhbz1726982
+
+* Tue Jul 30 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-8
+- Backport fix for upstream issue 2187 (disklayout.conf file contains
+  duplicate lines, breaking recovery in migration mode or when
+  thin pools are used). PR2194, 2196.
+  Resolves: rhbz1732328
+
 * Tue Mar 26 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-7
 - Backport fix for upstream bug 1913 (backup succeeds in case of tar error)
   Resolves: rhbz1631183

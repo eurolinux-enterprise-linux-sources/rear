@@ -1,0 +1,17 @@
+diff --git a/usr/share/rear/restore/BACULA/default/400_restore_backup.sh b/usr/share/rear/restore/BACULA/default/400_restore_backup.sh
+index eac4d275..d21af71c 100644
+--- a/usr/share/rear/restore/BACULA/default/400_restore_backup.sh
++++ b/usr/share/rear/restore/BACULA/default/400_restore_backup.sh
+@@ -110,7 +110,11 @@ WARNING: The new root is mounted under '$TARGET_FS_ROOT'.
+ Press ENTER to start bconsole"
+     read
+ 
+-    bconsole
++    if bconsole 0<&6 1>&7 2>&8 ; then
++        Log "bconsole finished with zero exit code"
++    else
++        Log "bconsole finished with non-zero exit code $?"
++    fi
+ 
+     LogPrint "
+ Please verify that the backup has been restored correctly to '$TARGET_FS_ROOT'
