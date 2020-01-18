@@ -2,7 +2,7 @@
 Summary:    Relax-and-Recover is a Linux disaster recovery and system migration tool
 Name:       rear
 Version:    2.4
-Release:    4%{?dist}
+Release:    5%{?dist}
 License:    GPLv3
 Group:      Applications/File
 URL:        http://relax-and-recover.org/
@@ -14,6 +14,7 @@ Patch10: rear-bz1639705.patch
 Patch11: rear-bz1653214.patch
 Patch12: rear-bz1659137.patch
 Patch14: rear-bz1672938.patch
+Patch15: rear-bz1685166.patch
 
 ExcludeArch: s390x
 ExcludeArch: s390
@@ -104,6 +105,7 @@ fi
 %patch11 -p1
 %patch12 -p1
 %patch14 -p1
+%patch15 -p1
 
 echo "30 1 * * * root /usr/sbin/rear checklayout || /usr/sbin/rear mkrescue" >rear.cron
 
@@ -138,6 +140,10 @@ TZ=UTC %{__make} -C doc
 %{_sbindir}/rear
 
 %changelog
+* Wed Mar 13 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-5
+- Apply upstream PR2065 (record permanent MAC address for team members)
+  Resolves: rhbz1685166
+
 * Tue Feb 26 2019 Pavel Cahyna <pcahyna@redhat.com> - 2.4-4
 - Apply upstream PR2034 (multipath optimizations for lots of devices)
 
